@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,20 +32,30 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  leases as initialLeases,
+  type Lease,
+  type Payment,
+  type Property,
+  type Tenant,
+  type Unit,
+} from "@/lib/store";
+import { FileText, Plus, Search, Calendar, DollarSign, Eye, AlertTriangle } from "lucide-react";
+
+interface LeasesContentProps {
+  initialLeases: Lease[];
+  tenants: Tenant[];
+  units: Unit[];
+  properties: Property[];
+  payments: Payment[];
+}
+
+export function LeasesContent({
+  initialLeases,
   tenants,
   units,
   properties,
   payments,
-  getTenantById,
-  getUnitById,
-  getPropertyById,
-  getPaymentsByLease,
-  type Lease,
-} from "@/lib/store";
-import { FileText, Plus, Search, Calendar, DollarSign, Eye, AlertTriangle } from "lucide-react";
-
-export function LeasesContent() {
+}: LeasesContentProps) {
+  const router = useRouter();
   const [leasesList, setLeasesList] = useState<Lease[]>(initialLeases);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -52,6 +63,18 @@ export function LeasesContent() {
   const [isCreateLeaseOpen, setIsCreateLeaseOpen] = useState(false);
   const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
   const [isViewLeaseOpen, setIsViewLeaseOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLeasesList(initialLeases);
+  }, [initialLeases]);
+
+  const getTenantById = (id: string) => tenants.find((tenant) => tenant.id === id);
+  const getUnitById = (id: string) => units.find((unit) => unit.id === id);
+  const getPropertyById = (id: string) => properties.find((property) => property.id === id);
+  const getPaymentsByLease = (leaseId: string) =>
+    payments.filter((payment) => payment.leaseId === leaseId);
 
   // Filter leases
   const filteredLeases = leasesList.filter((lease) => {
@@ -77,31 +100,72 @@ export function LeasesContent() {
     (u) => u.status === "available" || u.status === "reserved"
   );
 
-  const handleCreateLease = () => {
+  const handleCreateLease = async () => {
     const selectedUnit = units.find((u) => u.id === newLease.unitId);
     if (!selectedUnit) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
 
-    const lease: Lease = {
-      id: `lease-${Date.now()}`,
-      tenantId: newLease.tenantId,
-      unitId: newLease.unitId,
-      propertyId: selectedUnit.propertyId,
-      startDate: newLease.startDate,
-      endDate: newLease.endDate,
-      monthlyRent: parseInt(newLease.monthlyRent),
-      depositAmount: parseInt(newLease.depositAmount),
-      status: "active",
-    };
-    setLeasesList([...leasesList, lease]);
-    setNewLease({
-      tenantId: "",
-      unitId: "",
-      startDate: "",
-      endDate: "",
-      monthlyRent: "",
-      depositAmount: "",
-    });
-    setIsCreateLeaseOpen(false);
+    try {
+      const response = await fetch("/api/leases", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tenantId: newLease.tenantId,
+          unitId: newLease.unitId,
+          startDate: newLease.startDate,
+          endDate: newLease.endDate,
+          monthlyRent: parseInt(newLease.monthlyRent, 10),
+          depositAmount: parseInt(newLease.depositAmount, 10),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to create lease.");
+      }
+
+      const createdLease = (await response.json()) as {
+        id: string;
+        tenantId: string;
+        unitId: string;
+        propertyId: string;
+        startDate: string;
+        endDate: string;
+        monthlyRent: number;
+        depositAmount: number;
+        status: Lease["status"];
+      };
+
+      setLeasesList((current) => [
+        ...current,
+        {
+          ...createdLease,
+          startDate: createdLease.startDate.split("T")[0],
+          endDate: createdLease.endDate.split("T")[0],
+        },
+      ]);
+      setNewLease({
+        tenantId: "",
+        unitId: "",
+        startDate: "",
+        endDate: "",
+        monthlyRent: "",
+        depositAmount: "",
+      });
+      setIsCreateLeaseOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to create lease."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusColor = (status: Lease["status"]) => {
@@ -288,13 +352,20 @@ export function LeasesContent() {
                   />
                 </div>
               </div>
+              {submitError ? (
+                <p className="text-sm text-destructive">{submitError}</p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateLeaseOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreateLease} className="bg-primary text-primary-foreground">
-                Create Lease
+              <Button
+                onClick={handleCreateLease}
+                disabled={isSubmitting}
+                className="bg-primary text-primary-foreground"
+              >
+                {isSubmitting ? "Creating..." : "Create Lease"}
               </Button>
             </DialogFooter>
           </DialogContent>
