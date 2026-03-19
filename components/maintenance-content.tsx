@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,18 +25,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  maintenanceRequests as initialRequests,
-  tenants,
-  units,
-  leases,
-  getTenantById,
-  getUnitById,
-  getPropertyById,
   type MaintenanceRequest,
+  type Lease,
+  type Property,
+  type Tenant,
+  type Unit,
 } from "@/lib/store";
 import { Wrench, Plus, Search, AlertTriangle, Clock, CheckCircle, XCircle, Eye } from "lucide-react";
 
-export function MaintenanceContent() {
+interface MaintenanceContentProps {
+  initialRequests: MaintenanceRequest[];
+  tenants: Tenant[];
+  units: Unit[];
+  leases: Lease[];
+  properties: Property[];
+}
+
+export function MaintenanceContent({
+  initialRequests,
+  tenants,
+  units,
+  leases,
+  properties,
+}: MaintenanceContentProps) {
+  const router = useRouter();
   const [requests, setRequests] = useState<MaintenanceRequest[]>(initialRequests);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -43,6 +56,18 @@ export function MaintenanceContent() {
   const [isSubmitRequestOpen, setIsSubmitRequestOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<MaintenanceRequest | null>(null);
   const [isViewRequestOpen, setIsViewRequestOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRequests(initialRequests);
+  }, [initialRequests]);
+
+  const getTenantById = (id: string) => tenants.find((tenant) => tenant.id === id);
+  const getUnitById = (id: string) => units.find((unit) => unit.id === id);
+  const getPropertyById = (id: string) => properties.find((property) => property.id === id);
 
   // Filter requests
   const filteredRequests = requests.filter((request) => {
@@ -87,43 +112,128 @@ export function MaintenanceContent() {
     urgency: "medium" as MaintenanceRequest["urgency"],
   });
 
-  const handleSubmitRequest = () => {
-    const request: MaintenanceRequest = {
-      id: `maint-${Date.now()}`,
-      tenantId: newRequest.tenantId,
-      unitId: newRequest.unitId,
-      category: newRequest.category,
-      description: newRequest.description,
-      urgency: newRequest.urgency,
-      status: "new",
-      createdAt: new Date().toISOString().split("T")[0],
-      updatedAt: new Date().toISOString().split("T")[0],
-    };
-    setRequests([request, ...requests]);
-    setNewRequest({
-      tenantId: "",
-      unitId: "",
-      category: "" as MaintenanceRequest["category"],
-      description: "",
-      urgency: "medium",
-    });
-    setIsSubmitRequestOpen(false);
+  const handleSubmitRequest = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const response = await fetch("/api/maintenance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newRequest),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to submit maintenance request.");
+      }
+
+      const createdRequest = (await response.json()) as {
+        id: string;
+        tenantId: string;
+        unitId: string;
+        category: MaintenanceRequest["category"];
+        description: string;
+        urgency: MaintenanceRequest["urgency"];
+        status: MaintenanceRequest["status"];
+        createdAt: string;
+        updatedAt: string;
+        notes?: string | null;
+      };
+
+      const normalizedRequest: MaintenanceRequest = {
+        ...createdRequest,
+        createdAt: createdRequest.createdAt.split("T")[0],
+        updatedAt: createdRequest.updatedAt.split("T")[0],
+        notes: createdRequest.notes ?? undefined,
+      };
+
+      setRequests((current) => [normalizedRequest, ...current]);
+      setNewRequest({
+        tenantId: "",
+        unitId: "",
+        category: "" as MaintenanceRequest["category"],
+        description: "",
+        urgency: "medium",
+      });
+      setIsSubmitRequestOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to submit maintenance request."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleUpdateStatus = (requestId: string, newStatus: MaintenanceRequest["status"], notes?: string) => {
-    setRequests(
-      requests.map((r) =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: newStatus,
-              updatedAt: new Date().toISOString().split("T")[0],
-              notes: notes || r.notes,
-            }
-          : r
-      )
-    );
-    setIsViewRequestOpen(false);
+  const handleUpdateStatus = async (
+    requestId: string,
+    newStatus: MaintenanceRequest["status"],
+    notes?: string
+  ) => {
+    setIsUpdating(true);
+    setUpdateError(null);
+
+    try {
+      const response = await fetch("/api/maintenance", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: requestId,
+          status: newStatus,
+          notes,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to update maintenance request.");
+      }
+
+      const updatedRequest = (await response.json()) as {
+        id: string;
+        tenantId: string;
+        unitId: string;
+        category: MaintenanceRequest["category"];
+        description: string;
+        urgency: MaintenanceRequest["urgency"];
+        status: MaintenanceRequest["status"];
+        createdAt: string;
+        updatedAt: string;
+        notes?: string | null;
+      };
+
+      const normalizedRequest: MaintenanceRequest = {
+        ...updatedRequest,
+        createdAt: updatedRequest.createdAt.split("T")[0],
+        updatedAt: updatedRequest.updatedAt.split("T")[0],
+        notes: updatedRequest.notes ?? undefined,
+      };
+
+      setRequests((current) =>
+        current.map((request) =>
+          request.id === requestId ? normalizedRequest : request
+        )
+      );
+      setSelectedRequest(normalizedRequest);
+      startTransition(() => {
+        router.refresh();
+      });
+      setIsViewRequestOpen(false);
+    } catch (error) {
+      setUpdateError(
+        error instanceof Error ? error.message : "Failed to update maintenance request."
+      );
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const getStatusIcon = (status: MaintenanceRequest["status"]) => {
@@ -290,13 +400,20 @@ export function MaintenanceContent() {
                   className="bg-input border-border min-h-[100px]"
                 />
               </div>
+              {submitError ? (
+                <p className="text-sm text-destructive">{submitError}</p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsSubmitRequestOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSubmitRequest} className="bg-primary text-primary-foreground">
-                Submit Request
+              <Button
+                onClick={handleSubmitRequest}
+                disabled={isSubmitting}
+                className="bg-primary text-primary-foreground"
+              >
+                {isSubmitting ? "Submitting..." : "Submit Request"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -539,6 +656,7 @@ export function MaintenanceContent() {
                   {selectedRequest.status === "new" && (
                     <Button
                       onClick={() => handleUpdateStatus(selectedRequest.id, "in-progress")}
+                      disabled={isUpdating}
                       className="bg-chart-2 text-chart-2-foreground hover:bg-chart-2/90"
                     >
                       <Clock className="h-4 w-4 mr-1" />
@@ -548,6 +666,7 @@ export function MaintenanceContent() {
                   {selectedRequest.status === "in-progress" && (
                     <Button
                       onClick={() => handleUpdateStatus(selectedRequest.id, "completed")}
+                      disabled={isUpdating}
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       <CheckCircle className="h-4 w-4 mr-1" />
@@ -556,6 +675,7 @@ export function MaintenanceContent() {
                   )}
                   <Button
                     variant="outline"
+                    disabled={isUpdating}
                     onClick={() => handleUpdateStatus(selectedRequest.id, "cancelled")}
                   >
                     <XCircle className="h-4 w-4 mr-1" />
@@ -563,6 +683,9 @@ export function MaintenanceContent() {
                   </Button>
                 </div>
               )}
+              {updateError ? (
+                <p className="text-sm text-destructive">{updateError}</p>
+              ) : null}
             </div>
           )}
         </DialogContent>
