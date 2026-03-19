@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Property {
+  id          String   @id
+  name        String
+  address     String
+  description String
+  totalUnits  Int
+  status      String
+  createdAt   DateTime
+  units       Unit[]
+  leases      Lease[]
+}
+
+model Unit {
+  id               String               @id
+  propertyId       String
+  unitNumber       String
+  floor            Int
+  size             Int
+  baseRent         Int
+  status           String
+  property         Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leases           Lease[]
+  maintenanceItems MaintenanceRequest[]
+
+  @@index([propertyId])
+}
+
+model Tenant {
+  id               String               @id
+  name             String
+  email            String
+  phone            String
+  businessType     String
+  contactPerson    String
+  status           String
+  leases           Lease[]
+  maintenanceItems MaintenanceRequest[]
+}
+
+model Lease {
+  id            String    @id
+  tenantId      String
+  unitId        String
+  propertyId    String
+  startDate     DateTime
+  endDate       DateTime
+  monthlyRent   Int
+  depositAmount Int
+  status        String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit          Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  property      Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  payments      Payment[]
+
+  @@index([tenantId])
+  @@index([unitId])
+  @@index([propertyId])
+}
+
+model Payment {
+  id        String   @id
+  leaseId    String
+  amount     Int
+  date       DateTime
+  reference  String
+  status     String
+  lease      Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@index([leaseId])
+}
+
+model MaintenanceRequest {
+  id          String @id
+  tenantId    String
+  unitId      String
+  category    String
+  description String
+  urgency     String
+  status      String
+  createdAt   DateTime
+  updatedAt   DateTime
+  notes       String?
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit        Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([unitId])
+}
