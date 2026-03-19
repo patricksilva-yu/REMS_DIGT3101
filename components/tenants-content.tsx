@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,15 +32,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  tenants as initialTenants,
-  leases,
-  getUnitById,
-  getPropertyById,
   type Tenant,
+  type Lease,
+  type Property,
+  type Unit,
 } from "@/lib/store";
 import { Users, Plus, Search, Mail, Phone, Building2, Eye } from "lucide-react";
 
-export function TenantsContent() {
+interface TenantsContentProps {
+  initialTenants: Tenant[];
+  leases: Lease[];
+  units: Unit[];
+  properties: Property[];
+}
+
+export function TenantsContent({
+  initialTenants,
+  leases,
+  units,
+  properties,
+}: TenantsContentProps) {
+  const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>(initialTenants);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -47,6 +60,15 @@ export function TenantsContent() {
   const [isAddTenantOpen, setIsAddTenantOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTenants(initialTenants);
+  }, [initialTenants]);
+
+  const getUnitById = (id: string) => units.find((unit) => unit.id === id);
+  const getPropertyById = (id: string) => properties.find((property) => property.id === id);
 
   // Get unique business types
   const businessTypes = [...new Set(tenants.map((t) => t.businessType))];
@@ -72,25 +94,43 @@ export function TenantsContent() {
     contactPerson: "",
   });
 
-  const handleAddTenant = () => {
-    const tenant: Tenant = {
-      id: `tenant-${Date.now()}`,
-      name: newTenant.name,
-      email: newTenant.email,
-      phone: newTenant.phone,
-      businessType: newTenant.businessType,
-      contactPerson: newTenant.contactPerson,
-      status: "active",
-    };
-    setTenants([...tenants, tenant]);
-    setNewTenant({
-      name: "",
-      email: "",
-      phone: "",
-      businessType: "",
-      contactPerson: "",
-    });
-    setIsAddTenantOpen(false);
+  const handleAddTenant = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const response = await fetch("/api/tenants", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newTenant),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to add tenant.");
+      }
+
+      const createdTenant = (await response.json()) as Tenant;
+
+      setTenants((current) => [...current, createdTenant]);
+      setNewTenant({
+        name: "",
+        email: "",
+        phone: "",
+        businessType: "",
+        contactPerson: "",
+      });
+      setIsAddTenantOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Failed to add tenant.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getTenantLeases = (tenantId: string) => {
@@ -182,17 +222,24 @@ export function TenantsContent() {
                     onChange={(e) =>
                       setNewTenant({ ...newTenant, contactPerson: e.target.value })
                     }
-                    className="bg-input border-border"
-                  />
-                </div>
+                  className="bg-input border-border"
+                />
               </div>
+            </div>
+              {submitError ? (
+                <p className="text-sm text-destructive">{submitError}</p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAddTenantOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAddTenant} className="bg-primary text-primary-foreground">
-                Add Tenant
+              <Button
+                onClick={handleAddTenant}
+                disabled={isSubmitting}
+                className="bg-primary text-primary-foreground"
+              >
+                {isSubmitting ? "Adding..." : "Add Tenant"}
               </Button>
             </DialogFooter>
           </DialogContent>
