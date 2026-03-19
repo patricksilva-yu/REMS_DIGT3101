@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,15 +33,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  properties as initialProperties,
-  units as initialUnits,
-  getUnitsByProperty,
   type Property,
   type Unit,
 } from "@/lib/store";
 import { Building2, Plus, Search, Edit, Eye, Home } from "lucide-react";
 
-export function PropertiesContent() {
+interface PropertiesContentProps {
+  initialProperties: Property[];
+  initialUnits: Unit[];
+}
+
+export function PropertiesContent({
+  initialProperties,
+  initialUnits,
+}: PropertiesContentProps) {
+  const router = useRouter();
   const [properties, setProperties] = useState<Property[]>(initialProperties);
   const [units, setUnits] = useState<Unit[]>(initialUnits);
   const [searchQuery, setSearchQuery] = useState("");
@@ -48,6 +55,18 @@ export function PropertiesContent() {
   const [isAddPropertyOpen, setIsAddPropertyOpen] = useState(false);
   const [isAddUnitOpen, setIsAddUnitOpen] = useState(false);
   const [isViewUnitsOpen, setIsViewUnitsOpen] = useState(false);
+  const [isSubmittingProperty, setIsSubmittingProperty] = useState(false);
+  const [isSubmittingUnit, setIsSubmittingUnit] = useState(false);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [unitError, setUnitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProperties(initialProperties);
+  }, [initialProperties]);
+
+  useEffect(() => {
+    setUnits(initialUnits);
+  }, [initialUnits]);
 
   // Filter properties
   const filteredProperties = properties.filter(
@@ -72,49 +91,110 @@ export function PropertiesContent() {
     status: "available" as Unit["status"],
   });
 
-  const handleAddProperty = () => {
-    const property: Property = {
-      id: `prop-${Date.now()}`,
-      name: newProperty.name,
-      address: newProperty.address,
-      description: newProperty.description,
-      totalUnits: 0,
-      status: "active",
-      createdAt: new Date().toISOString().split("T")[0],
-    };
-    setProperties([...properties, property]);
-    setNewProperty({ name: "", address: "", description: "" });
-    setIsAddPropertyOpen(false);
+  const handleAddProperty = async () => {
+    setIsSubmittingProperty(true);
+    setPropertyError(null);
+
+    try {
+      const response = await fetch("/api/properties", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newProperty),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to add property.");
+      }
+
+      const createdProperty = (await response.json()) as {
+        id: string;
+        name: string;
+        address: string;
+        description: string;
+        totalUnits: number;
+        status: Property["status"];
+        createdAt: string;
+      };
+
+      setProperties((current) => [
+        ...current,
+        {
+          ...createdProperty,
+          createdAt: createdProperty.createdAt.split("T")[0],
+        },
+      ]);
+      setNewProperty({ name: "", address: "", description: "" });
+      setIsAddPropertyOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setPropertyError(
+        error instanceof Error ? error.message : "Failed to add property."
+      );
+    } finally {
+      setIsSubmittingProperty(false);
+    }
   };
 
-  const handleAddUnit = () => {
+  const handleAddUnit = async () => {
     if (!selectedProperty) return;
-    const unit: Unit = {
-      id: `unit-${Date.now()}`,
-      propertyId: selectedProperty.id,
-      unitNumber: newUnit.unitNumber,
-      floor: parseInt(newUnit.floor),
-      size: parseInt(newUnit.size),
-      baseRent: parseInt(newUnit.baseRent),
-      status: newUnit.status,
-    };
-    setUnits([...units, unit]);
-    // Update property total units
-    setProperties(
-      properties.map((p) =>
-        p.id === selectedProperty.id
-          ? { ...p, totalUnits: p.totalUnits + 1 }
-          : p
-      )
-    );
-    setNewUnit({
-      unitNumber: "",
-      floor: "",
-      size: "",
-      baseRent: "",
-      status: "available",
-    });
-    setIsAddUnitOpen(false);
+    setIsSubmittingUnit(true);
+    setUnitError(null);
+
+    try {
+      const response = await fetch("/api/units", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          propertyId: selectedProperty.id,
+          unitNumber: newUnit.unitNumber,
+          floor: parseInt(newUnit.floor, 10),
+          size: parseInt(newUnit.size, 10),
+          baseRent: parseInt(newUnit.baseRent, 10),
+          status: newUnit.status,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to add unit.");
+      }
+
+      const createdUnit = (await response.json()) as Unit;
+
+      setUnits((current) => [...current, createdUnit]);
+      setProperties((current) =>
+        current.map((property) =>
+          property.id === selectedProperty.id
+            ? { ...property, totalUnits: property.totalUnits + 1 }
+            : property
+        )
+      );
+      setSelectedProperty((current) =>
+        current ? { ...current, totalUnits: current.totalUnits + 1 } : current
+      );
+      setNewUnit({
+        unitNumber: "",
+        floor: "",
+        size: "",
+        baseRent: "",
+        status: "available",
+      });
+      setIsAddUnitOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setUnitError(error instanceof Error ? error.message : "Failed to add unit.");
+    } finally {
+      setIsSubmittingUnit(false);
+    }
   };
 
   const getPropertyUnits = (propertyId: string) => {
@@ -196,13 +276,20 @@ export function PropertiesContent() {
                   className="bg-input border-border"
                 />
               </div>
+              {propertyError ? (
+                <p className="text-sm text-destructive">{propertyError}</p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAddPropertyOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleAddProperty} className="bg-primary text-primary-foreground">
-                Add Property
+              <Button
+                onClick={handleAddProperty}
+                disabled={isSubmittingProperty}
+                className="bg-primary text-primary-foreground"
+              >
+                {isSubmittingProperty ? "Adding..." : "Add Property"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -452,13 +539,20 @@ export function PropertiesContent() {
                 </SelectContent>
               </Select>
             </div>
+            {unitError ? (
+              <p className="text-sm text-destructive">{unitError}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddUnitOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddUnit} className="bg-primary text-primary-foreground">
-              Add Unit
+            <Button
+              onClick={handleAddUnit}
+              disabled={isSubmittingUnit}
+              className="bg-primary text-primary-foreground"
+            >
+              {isSubmittingUnit ? "Adding..." : "Add Unit"}
             </Button>
           </DialogFooter>
         </DialogContent>
