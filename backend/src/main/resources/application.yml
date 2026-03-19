@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: rems-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/rems}
+    username: ${SPRING_DATASOURCE_USERNAME:rems}
+    password: ${SPRING_DATASOURCE_PASSWORD:rems}
+  flyway:
+    enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
