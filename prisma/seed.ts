@@ -14,7 +14,7 @@ function toDate(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
-async function main() {
+export async function seedDatabase() {
   await prisma.payment.deleteMany();
   await prisma.maintenanceRequest.deleteMany();
   await prisma.lease.deleteMany();
@@ -61,12 +61,18 @@ async function main() {
   });
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
-    console.error(error);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+async function main() {
+  await seedDatabase();
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (error) => {
+      console.error(error);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}
