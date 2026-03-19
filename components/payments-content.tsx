@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,21 +32,45 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  payments as initialPayments,
-  leases,
-  getTenantById,
-  getUnitById,
-  getPropertyById,
-  getLeaseById,
   type Payment,
+  type Lease,
+  type Property,
+  type Tenant,
+  type Unit,
 } from "@/lib/store";
 import { CreditCard, Plus, Search, DollarSign, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
-export function PaymentsContent() {
+interface PaymentsContentProps {
+  initialPayments: Payment[];
+  leases: Lease[];
+  tenants: Tenant[];
+  units: Unit[];
+  properties: Property[];
+}
+
+export function PaymentsContent({
+  initialPayments,
+  leases,
+  tenants,
+  units,
+  properties,
+}: PaymentsContentProps) {
+  const router = useRouter();
   const [paymentsList, setPaymentsList] = useState<Payment[]>(initialPayments);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPaymentsList(initialPayments);
+  }, [initialPayments]);
+
+  const getTenantById = (id: string) => tenants.find((tenant) => tenant.id === id);
+  const getUnitById = (id: string) => units.find((unit) => unit.id === id);
+  const getPropertyById = (id: string) => properties.find((property) => property.id === id);
+  const getLeaseById = (id: string) => leases.find((lease) => lease.id === id);
 
   // Filter payments
   const filteredPayments = paymentsList.filter((payment) => {
@@ -74,23 +99,62 @@ export function PaymentsContent() {
   // Active leases for payment
   const activeLeases = leases.filter((l) => l.status === "active");
 
-  const handleRecordPayment = () => {
-    const payment: Payment = {
-      id: `pay-${Date.now()}`,
-      leaseId: newPayment.leaseId,
-      amount: parseInt(newPayment.amount),
-      date: newPayment.date,
-      reference: newPayment.reference,
-      status: "completed",
-    };
-    setPaymentsList([...paymentsList, payment]);
-    setNewPayment({
-      leaseId: "",
-      amount: "",
-      date: new Date().toISOString().split("T")[0],
-      reference: "",
-    });
-    setIsRecordPaymentOpen(false);
+  const handleRecordPayment = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const response = await fetch("/api/payments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          leaseId: newPayment.leaseId,
+          amount: parseInt(newPayment.amount, 10),
+          date: newPayment.date,
+          reference: newPayment.reference,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Failed to record payment.");
+      }
+
+      const createdPayment = (await response.json()) as {
+        id: string;
+        leaseId: string;
+        amount: number;
+        date: string;
+        reference: string;
+        status: Payment["status"];
+      };
+
+      setPaymentsList((current) => [
+        {
+          ...createdPayment,
+          date: createdPayment.date.split("T")[0],
+        },
+        ...current,
+      ]);
+      setNewPayment({
+        leaseId: "",
+        amount: "",
+        date: new Date().toISOString().split("T")[0],
+        reference: "",
+      });
+      setIsRecordPaymentOpen(false);
+      startTransition(() => {
+        router.refresh();
+      });
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to record payment."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusIcon = (status: Payment["status"]) => {
@@ -221,13 +285,20 @@ export function PaymentsContent() {
                   className="bg-input border-border"
                 />
               </div>
+              {submitError ? (
+                <p className="text-sm text-destructive">{submitError}</p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsRecordPaymentOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleRecordPayment} className="bg-primary text-primary-foreground">
-                Record Payment
+              <Button
+                onClick={handleRecordPayment}
+                disabled={isSubmitting}
+                className="bg-primary text-primary-foreground"
+              >
+                {isSubmitting ? "Recording..." : "Record Payment"}
               </Button>
             </DialogFooter>
           </DialogContent>
