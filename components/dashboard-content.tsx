@@ -3,15 +3,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  getDashboardMetrics,
-  properties,
-  maintenanceRequests,
-  tenants,
-  leases,
-  units,
-  getTenantById,
-  getUnitById,
-  getPropertyById,
+  type Lease,
+  type MaintenanceRequest,
+  type Property,
+  type Tenant,
+  type Unit,
 } from "@/lib/store";
 import {
   Building2,
@@ -36,37 +32,46 @@ import {
   Cell,
 } from "recharts";
 
-const metrics = getDashboardMetrics();
-
-// Mock revenue data
-const revenueData = [
-  { month: "Aug", revenue: 42000 },
-  { month: "Sep", revenue: 45000 },
-  { month: "Oct", revenue: 48000 },
-  { month: "Nov", revenue: 52000 },
-  { month: "Dec", revenue: 54000 },
-  { month: "Jan", revenue: 56400 },
-];
-
-// Occupancy by property
-const occupancyData = properties.map((property) => {
-  const propertyUnits = units.filter((u) => u.propertyId === property.id);
-  const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
-  return {
-    name: property.name.split(" ")[0],
-    value: occupied,
-    total: propertyUnits.length,
-  };
-});
-
 const COLORS = ["hsl(160, 50%, 50%)", "hsl(200, 50%, 55%)", "hsl(85, 50%, 55%)"];
 
-export function DashboardContent() {
-  const recentMaintenance = maintenanceRequests
-    .filter((m) => m.status === "new" || m.status === "in-progress")
-    .slice(0, 4);
+interface DashboardMetrics {
+  totalProperties: number;
+  totalUnits: number;
+  occupiedUnits: number;
+  occupancyRate: number;
+  availableUnits: number;
+  totalMonthlyRent: number;
+  overdueAmount: number;
+  openMaintenance: number;
+  highPriorityMaintenance: number;
+  activeLeases: number;
+  totalTenants: number;
+}
 
-  const recentLeases = leases.filter((l) => l.status === "active").slice(0, 4);
+interface DashboardContentProps {
+  metrics: DashboardMetrics;
+  revenueData: Array<{ month: string; revenue: number }>;
+  occupancyData: Array<{ name: string; value: number; total: number }>;
+  recentMaintenance: MaintenanceRequest[];
+  recentLeases: Lease[];
+  tenants: Tenant[];
+  properties: Property[];
+  units: Unit[];
+}
+
+export function DashboardContent({
+  metrics,
+  revenueData,
+  occupancyData,
+  recentMaintenance,
+  recentLeases,
+  tenants,
+  properties,
+  units,
+}: DashboardContentProps) {
+  const getTenantById = (id: string) => tenants.find((tenant) => tenant.id === id);
+  const getUnitById = (id: string) => units.find((unit) => unit.id === id);
+  const getPropertyById = (id: string) => properties.find((property) => property.id === id);
 
   return (
     <div className="p-4 md:p-6 lg:p-8">
@@ -143,7 +148,7 @@ export function DashboardContent() {
               {metrics.openMaintenance}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {maintenanceRequests.filter((m) => m.urgency === "critical" || m.urgency === "high").length} high priority
+              {metrics.highPriorityMaintenance} high priority
             </p>
           </CardContent>
         </Card>
