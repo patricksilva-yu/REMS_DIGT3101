@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:18
+    container_name: rems-db
+    environment:
+      POSTGRES_DB: rems
+      POSTGRES_USER: rems
+      POSTGRES_PASSWORD: rems
+    ports:
+      - "${REMS_DB_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rems -d rems"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - rems-pg-data:/var/lib/postgresql
+
+  backend:
+    build:
+      context: ./backend
+    container_name: rems-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/rems
+      SPRING_DATASOURCE_USERNAME: rems
+      SPRING_DATASOURCE_PASSWORD: rems
+      SERVER_PORT: 8080
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${REMS_BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: rems-frontend
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8080
+      PORT: 3000
+    depends_on:
+      - backend
+    ports:
+      - "${REMS_FRONTEND_PORT:-3000}:3000"
+
+volumes:
+  rems-pg-data:

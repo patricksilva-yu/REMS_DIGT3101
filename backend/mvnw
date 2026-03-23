@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+
+SOCKET_ARGS=""
+if [ -S /var/run/docker.sock ]; then
+  SOCKET_ARGS="-v /var/run/docker.sock:/var/run/docker.sock --group-add 0 -e DOCKER_HOST=unix:///var/run/docker.sock"
+fi
+
+HOST_OVERRIDE_ARGS=""
+case "$(uname -s)" in
+  Darwin|MINGW*|MSYS*|CYGWIN*)
+    HOST_OVERRIDE_ARGS="-e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal"
+    ;;
+esac
+
+exec docker run --rm \
+  -u "$(id -u):$(id -g)" \
+  -v "$SCRIPT_DIR":/workspace \
+  $SOCKET_ARGS \
+  $HOST_OVERRIDE_ARGS \
+  -e HOME=/workspace \
+  -e MAVEN_CONFIG=/workspace/.m2 \
+  -w /workspace \
+  maven:3.9.9-eclipse-temurin-21 \
+  mvn -Dmaven.repo.local=/workspace/.m2/repository "$@"

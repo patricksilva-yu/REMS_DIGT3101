@@ -1,41 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# REMS Deliverable 3
 
-## Getting Started
+REMS is a full-stack Real Estate Management System built for DIGT3101 Deliverable 3. The repo is now a monorepo with a React/Next frontend, a Spring Boot backend, PostgreSQL persistence, and a one-command Docker Compose runtime.
 
+## Repo Layout
 
-1. `git clone https://github.com/patricksilva-yu/REMS_DIGT3101`
-2. `cd rems_digt3101`
-3. `npm install`
+- `frontend/`: Next.js 16 App Router UI for staff dashboards, public unit search, appointments, and rental applications
+- `backend/`: Spring Boot 4 API with Flyway migrations, JPA persistence, billing logic, maintenance workflows, and scheduled lifecycle tasks
+- `Deliverable3/`: report-support artifacts including traceability, schedule notes, meeting logs, and test/coverage placeholders
+- `compose.yaml`: local stack for frontend, backend, and PostgreSQL
 
-Then run the development server (if not already running):
+## Run the Stack
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Services:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Frontend: [http://localhost:3000](http://localhost:3000)
+- Backend API: [http://localhost:8080](http://localhost:8080)
+- OpenAPI docs: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+- PostgreSQL: `localhost:55432`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+If those host ports are already in use, override them before starting Compose:
 
-## Learn More
+```bash
+REMS_FRONTEND_PORT=3001 REMS_BACKEND_PORT=8081 REMS_DB_PORT=55433 docker compose up --build
+```
 
-To learn more about Next.js, take a look at the following resources:
+Demo accounts seeded by Flyway:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `admin@rems.com` / `demo123`
+- `manager@rems.com` / `demo123`
+- `leah.agent@rems.com` / `demo123`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Local Commands
 
-## Deploy on Vercel
+Backend compile and tests use the containerized Maven wrapper, so Maven is not required on the host:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cd backend
+./mvnw test
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Frontend commands:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+## Core Features
+
+- Property and unit management
+- Public unit search with configurable filters
+- Viewing appointment scheduling with availability and overlap checks
+- Rental application intake and staff review
+- Lease creation, payment-cycle pricing, utilities, invoices, and payment recording
+- Maintenance request submission, escalation, and misuse-charge billing
+
+## Deliverable Artifacts
+
+See [Deliverable3/README.md](/Users/patrick/Developer/REMS_DIGT3101/Deliverable3/README.md) for the repo-side deliverable structure and evidence checklist.
